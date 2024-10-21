@@ -49,51 +49,51 @@ def fuse_conv_and_bn(conv, bn):
 
         return fusedconv
 
+if __name__ == "__main__":
+    image_path_list = sorted(glob('test_images/*.jpg'))
+    vis_path = 'test_results/'
 
-image_path_list = sorted(glob('test_images/*.jpg'))
-vis_path = 'test_results/'
+    device = torch.device('cuda')
 
-device = torch.device('cuda')
+    model = NeuFlow().to(device)
 
-model = NeuFlow().to(device)
+    checkpoint = torch.load('neuflow_mixed.pth', map_location='cuda')
 
-checkpoint = torch.load('neuflow_mixed.pth', map_location='cuda')
+    model.load_state_dict(checkpoint['model'], strict=True)
 
-model.load_state_dict(checkpoint['model'], strict=True)
+    for m in model.modules():
+        if type(m) is ConvBlock:
+            m.conv1 = fuse_conv_and_bn(m.conv1, m.norm1)  # update conv
+            m.conv2 = fuse_conv_and_bn(m.conv2, m.norm2)  # update conv
+            delattr(m, "norm1")  # remove batchnorm
+            delattr(m, "norm2")  # remove batchnorm
+            m.forward = m.forward_fuse  # update forward
 
-for m in model.modules():
-    if type(m) is ConvBlock:
-        m.conv1 = fuse_conv_and_bn(m.conv1, m.norm1)  # update conv
-        m.conv2 = fuse_conv_and_bn(m.conv2, m.norm2)  # update conv
-        delattr(m, "norm1")  # remove batchnorm
-        delattr(m, "norm2")  # remove batchnorm
-        m.forward = m.forward_fuse  # update forward
+    model.eval()
+    model.half()
 
-model.eval()
-model.half()
+    model.init_bhwd(1, image_height, image_width, 'cuda')
 
-model.init_bhwd(1, image_height, image_width, 'cuda')
+    if not os.path.exists(vis_path):
+        os.makedirs(vis_path)
 
-if not os.path.exists(vis_path):
-    os.makedirs(vis_path)
+    for image_path_0, image_path_1 in zip(image_path_list[:-1], image_path_list[1:]):
 
-for image_path_0, image_path_1 in zip(image_path_list[:-1], image_path_list[1:]):
+        print(image_path_0)
 
-    print(image_path_0)
+        image_0 = get_cuda_image(image_path_0)
+        image_1 = get_cuda_image(image_path_1)
 
-    image_0 = get_cuda_image(image_path_0)
-    image_1 = get_cuda_image(image_path_1)
+        file_name = os.path.basename(image_path_0)
 
-    file_name = os.path.basename(image_path_0)
+        with torch.no_grad():
 
-    with torch.no_grad():
+            flow = model(image_0, image_1)[-1][0]
 
-        flow = model(image_0, image_1)[-1][0]
+            flow = flow.permute(1,2,0).cpu().numpy()
+            
+            flow = flow_viz.flow_to_image(flow)
 
-        flow = flow.permute(1,2,0).cpu().numpy()
-        
-        flow = flow_viz.flow_to_image(flow)
+            image_0 = cv2.resize(cv2.imread(image_path_0), (image_width, image_height))
 
-        image_0 = cv2.resize(cv2.imread(image_path_0), (image_width, image_height))
-
-        cv2.imwrite(vis_path + file_name, np.vstack([image_0, flow]))
+            cv2.imwrite(vis_path + file_name, np.vstack([image_0, flow]))

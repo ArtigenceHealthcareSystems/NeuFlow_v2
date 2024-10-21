@@ -1,3 +1,14 @@
 __pycache__/
 /datasets
 /test_results
+wandb/
+*.onnx
+*.pt
+*.bin
+*.param
+bar_chart_with_labels.png
+bar_chart.png
+neuflow.foldable_constants.zip
+resnet18_ncnn.py
+%cd%/hub/checkpoints/resnet18-f37072fd.pth
+resnet18_pnnx.py
